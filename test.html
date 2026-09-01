@@ -129,7 +129,8 @@
         const subjectId = document.getElementById('subjectSelect').value;
         const topicId = document.getElementById('topicSelect').value;
         const lectureSelect = document.getElementById('lectureSelect');
-        lectureSelect.innerHTML = '<option value="">-- Loading Lectures... --</option>';
+        
+        lectureSelect.innerHTML = '<option value="">⏳ Fetching Lectures...</option>';
 
         if (!topicId) return;
 
@@ -140,13 +141,13 @@
                 body: JSON.stringify({ course_id: batchId, subject_id: subjectId, topic_id: topicId })
             });
             const data = await res.json();
-            
+
             lectureSelect.innerHTML = '<option value="">-- Select Lecture --</option>';
 
             if (Array.isArray(data) && data.length > 0) {
                 data.forEach(lec => {
                     let opt = document.createElement('option');
-                    opt.value = lec.video_id || lec.id;
+                    opt.value = lec.id;
                     opt.textContent = lec.name;
                     lectureSelect.appendChild(opt);
                 });
@@ -176,7 +177,11 @@
             const data = await res.json();
 
             if (data.success && data.video_url) {
-                const videoUrl = data.video_url;
+                let rawUrl = data.video_url;
+
+                if (rawUrl.includes('*')) {
+                    rawUrl = rawUrl.split('*')[0];
+                }
 
                 if (data.pdf_url) {
                     pdfBtn.href = data.pdf_url;
@@ -189,22 +194,25 @@
                     hlsInstance.destroy();
                 }
 
-                if (videoUrl.includes('.m3u8')) {
+                // Route through Express Proxy for Token Authorization
+                const proxiedUrl = `/api/proxy?url=${encodeURIComponent(rawUrl)}`;
+
+                if (rawUrl.includes('.m3u8')) {
                     if (Hls.isSupported()) {
                         hlsInstance = new Hls();
-                        hlsInstance.loadSource(videoUrl);
+                        hlsInstance.loadSource(proxiedUrl);
                         hlsInstance.attachMedia(video);
                         hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => video.play());
                     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                        video.src = videoUrl;
+                        video.src = proxiedUrl;
                         video.play();
                     }
                 } else {
-                    video.src = videoUrl;
+                    video.src = rawUrl;
                     video.play();
                 }
             } else {
-                alert("Lecture stream load nahi ho pa raha h.");
+                alert("Stream URL fetch nahi ho saki.");
             }
         } catch (err) {
             console.error("Play Video Error:", err);
