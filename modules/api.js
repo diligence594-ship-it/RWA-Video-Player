@@ -60,7 +60,7 @@ async function fetchBatches(req, res) {
 async function fetchSubjects(req, res) {
     const { batch_id } = req.body;
     try {
-        const url = `https://${API_BASE}/get/allsubjectfrmlivecourseclass?courseid=${batch_id}&start=-1`;
+        const url = `https://${API_BASE}/get/allsubjectfrmlivecourseclass?courseid=${batch_id}&start=-1&userid=${USER_ID}`;
         const response = await fetch(url, { headers: getHeaders() });
         const data = await response.json();
         
@@ -77,17 +77,27 @@ async function fetchSubjects(req, res) {
     }
 }
 
+// Fixed Topics Handler with Fallback Support
 async function fetchTopics(req, res) {
     const { course_id, subject_id } = req.body;
     try {
-        const url = `https://${API_BASE}/get/alltopicfrmlivecourseclass?courseid=${course_id}&subjectid=${subject_id}&start=-1`;
-        const response = await fetch(url, { headers: getHeaders() });
-        const data = await response.json();
-        
-        const rawTopics = data.data || [];
+        // Primary Attempt: Standard Live Course Class Topics
+        let url = `https://${API_BASE}/get/alltopicfrmlivecourseclass?courseid=${course_id}&subjectid=${subject_id}&start=-1&userid=${USER_ID}`;
+        let response = await fetch(url, { headers: getHeaders() });
+        let data = await response.json();
+        let rawTopics = data.data || [];
+
+        // Secondary Fallback Attempt: Folder Wise Structure
+        if (!rawTopics || rawTopics.length === 0) {
+            url = `https://${API_BASE}/get/alltopicfrmlivecourseclassv2?courseid=${course_id}&subjectid=${subject_id}&start=-1&userid=${USER_ID}`;
+            response = await fetch(url, { headers: getHeaders() });
+            data = await response.json();
+            rawTopics = data.data || [];
+        }
+
         const formattedTopics = rawTopics.map(item => ({
             id: item.id || item.topic_id || item.topicid,
-            name: item.topic_name || item.name || "Topic",
+            name: item.topic_name || item.title || item.name || "Topic",
             video_id: item.video_id || item.id
         }));
 
