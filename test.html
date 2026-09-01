@@ -129,7 +129,7 @@
         const subjectId = document.getElementById('subjectSelect').value;
         const topicId = document.getElementById('topicSelect').value;
         const lectureSelect = document.getElementById('lectureSelect');
-        lectureSelect.innerHTML = '<option value="">-- Select Lecture --</option>';
+        lectureSelect.innerHTML = '<option value="">-- Loading Lectures... --</option>';
 
         if (!topicId) return;
 
@@ -140,17 +140,22 @@
                 body: JSON.stringify({ course_id: batchId, subject_id: subjectId, topic_id: topicId })
             });
             const data = await res.json();
+            
+            lectureSelect.innerHTML = '<option value="">-- Select Lecture --</option>';
 
-            if (Array.isArray(data)) {
+            if (Array.isArray(data) && data.length > 0) {
                 data.forEach(lec => {
                     let opt = document.createElement('option');
                     opt.value = lec.video_id || lec.id;
                     opt.textContent = lec.name;
                     lectureSelect.appendChild(opt);
                 });
+            } else {
+                lectureSelect.innerHTML = '<option value="">-- No Lectures Found --</option>';
             }
         } catch (err) {
             console.error("Lectures fetch error:", err);
+            lectureSelect.innerHTML = '<option value="">-- Error Loading Lectures --</option>';
         }
     }
 
@@ -199,7 +204,7 @@
                     video.play();
                 }
             } else {
-                alert("Stream URL encrypted ya unavailable hai.");
+                alert("Lecture stream load nahi ho pa raha h.");
             }
         } catch (err) {
             console.error("Play Video Error:", err);
