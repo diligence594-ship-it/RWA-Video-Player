@@ -77,28 +77,39 @@ async function fetchSubjects(req, res) {
     }
 }
 
-// Fixed Topics Handler with Fallback Support
+// Updated Topics & Folder Handler
 async function fetchTopics(req, res) {
-    const { course_id, subject_id } = req.body;
+    const { course_id, subject_id, folder_id = "0" } = req.body;
     try {
-        // Primary Attempt: Standard Live Course Class Topics
+        let rawItems = [];
+
+        // 1. Try Standard Topic List
         let url = `https://${API_BASE}/get/alltopicfrmlivecourseclass?courseid=${course_id}&subjectid=${subject_id}&start=-1&userid=${USER_ID}`;
         let response = await fetch(url, { headers: getHeaders() });
         let data = await response.json();
-        let rawTopics = data.data || [];
+        rawItems = data.data || [];
 
-        // Secondary Fallback Attempt: Folder Wise Structure
-        if (!rawTopics || rawTopics.length === 0) {
-            url = `https://${API_BASE}/get/alltopicfrmlivecourseclassv2?courseid=${course_id}&subjectid=${subject_id}&start=-1&userid=${USER_ID}`;
+        // 2. Fallback: Folder / Concept wise Video List
+        if (!rawItems || rawItems.length === 0) {
+            url = `https://${API_BASE}/get/allconceptfolderwise?courseid=${course_id}&subjectid=${subject_id}&folderid=${folder_id}&start=-1&userid=${USER_ID}`;
             response = await fetch(url, { headers: getHeaders() });
             data = await response.json();
-            rawTopics = data.data || [];
+            rawItems = data.data || [];
         }
 
-        const formattedTopics = rawTopics.map(item => ({
-            id: item.id || item.topic_id || item.topicid,
-            name: item.topic_name || item.title || item.name || "Topic",
-            video_id: item.video_id || item.id
+        // 3. Fallback: Direct Video Endpoint
+        if (!rawItems || rawItems.length === 0) {
+            url = `https://${API_BASE}/get/allvideofrmlivecourseclass?courseid=${course_id}&subjectid=${subject_id}&topicid=${folder_id}&start=-1&userid=${USER_ID}`;
+            response = await fetch(url, { headers: getHeaders() });
+            data = await response.json();
+            rawItems = data.data || [];
+        }
+
+        const formattedTopics = rawItems.map(item => ({
+            id: item.id || item.topic_id || item.topicid || item.video_id,
+            name: item.title || item.topic_name || item.name || item.video_title || "Lecture",
+            video_id: item.video_id || item.id || "",
+            is_folder: item.is_folder || (item.folder_name ? true : false)
         }));
 
         res.json(formattedTopics);
