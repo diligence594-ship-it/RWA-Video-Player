@@ -8,7 +8,8 @@ const {
     fetchSubjects, 
     fetchTopics, 
     fetchLectures, 
-    fetchVideoUrl 
+    fetchVideoUrl,
+    proxyStream 
 } = require("./modules/api.js");
 
 const app = express();
@@ -29,6 +30,9 @@ app.post("/api/subjects", fetchSubjects);
 app.post("/api/topics", fetchTopics);
 app.post("/api/lectures", fetchLectures);
 app.post("/api/video", fetchVideoUrl);
+
+// Proxy Endpoint for Authenticated HLS Streams
+app.get("/api/proxy", proxyStream);
 
 app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server successfully started on port ${PORT}`);
