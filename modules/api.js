@@ -8,7 +8,6 @@ const USER_ID = process.env.APPX_USERID || "4300255";
 const AES_KEY = Buffer.from("638udh3829162018", "utf-8");
 const AES_IV = Buffer.from("fedcba9876543210", "utf-8");
 
-// AppX Decryption Engine
 function decryptAppx(encryptedText) {
     if (!encryptedText) return "";
     try {
@@ -38,7 +37,6 @@ function getHeaders() {
     };
 }
 
-// 1. Batches Fetching
 async function fetchBatches(req, res) {
     try {
         const url = `https://${API_BASE}/get/mycoursev2?userid=${USER_ID}`;
@@ -46,11 +44,9 @@ async function fetchBatches(req, res) {
         const data = await response.json();
         
         const rawCourses = data.data || [];
-        
         const formattedBatches = rawCourses.map(item => ({
             id: item.id || item.course_id || item.courseid,
-            name: item.course_name || item.title || item.name || "Untitled Batch",
-            image: item.cover_image || item.image || ""
+            name: item.course_name || item.title || item.name || "Untitled Batch"
         }));
 
         res.json(formattedBatches);
@@ -60,7 +56,6 @@ async function fetchBatches(req, res) {
     }
 }
 
-// 2. Subjects Fetching
 async function fetchSubjects(req, res) {
     const { batch_id } = req.body;
     try {
@@ -81,7 +76,6 @@ async function fetchSubjects(req, res) {
     }
 }
 
-// 3. Topics Fetching
 async function fetchTopics(req, res) {
     const { course_id, subject_id } = req.body;
     try {
@@ -92,7 +86,7 @@ async function fetchTopics(req, res) {
         const rawTopics = data.data || [];
         const formattedTopics = rawTopics.map(item => ({
             id: item.topicid || item.id || item.topic_id,
-            name: item.topic_name || item.name || "Topic"
+            name: item.topic_name || item.name || item.title || "Topic"
         }));
 
         res.json(formattedTopics);
@@ -102,17 +96,19 @@ async function fetchTopics(req, res) {
     }
 }
 
-// 4. Lectures / Videos Fetching (Topic ID & Concept ID Fallback)
+// Fixed Multi-Fallback Lectures Engine
 async function fetchLectures(req, res) {
     const { course_id, subject_id, topic_id } = req.body;
     try {
-        // Primary Endpoint
+        let rawVideos = [];
+
+        // Attempt 1: Standard Topic Classes
         let url = `https://${API_BASE}/get/livecourseclassbycoursesubtopconceptapiv3?courseid=${course_id}&subjectid=${subject_id}&topicid=${topic_id}&conceptid=&start=-1`;
         let response = await fetch(url, { headers: getHeaders() });
         let data = await response.json();
-        let rawVideos = data.data || [];
+        rawVideos = data.data || [];
 
-        // Secondary Endpoint (If topic_id acts as concept_id)
+        // Attempt 2: Concept ID based fetch
         if (!rawVideos || rawVideos.length === 0) {
             url = `https://${API_BASE}/get/livecourseclassbycoursesubtopconceptapiv3?courseid=${course_id}&subjectid=${subject_id}&topicid=&conceptid=${topic_id}&start=-1`;
             response = await fetch(url, { headers: getHeaders() });
@@ -120,9 +116,17 @@ async function fetchLectures(req, res) {
             rawVideos = data.data || [];
         }
 
+        // Attempt 3: Direct Video Endpoint
+        if (!rawVideos || rawVideos.length === 0) {
+            url = `https://${API_BASE}/get/allvideofrmlivecourseclass?courseid=${course_id}&subjectid=${subject_id}&topicid=${topic_id}&start=-1`;
+            response = await fetch(url, { headers: getHeaders() });
+            data = await response.json();
+            rawVideos = data.data || [];
+        }
+
         const formattedVideos = rawVideos.map(item => ({
-            id: item.id || item.video_id,
-            name: item.title || item.name || "Lecture",
+            id: item.id || item.video_id || item.v_id,
+            name: item.title || item.name || item.video_title || "Lecture Video",
             video_id: item.id || item.video_id
         }));
 
@@ -133,7 +137,6 @@ async function fetchLectures(req, res) {
     }
 }
 
-// 5. Video Stream & Decryption Engine
 async function fetchVideoUrl(req, res) {
     const { course_id, video_id } = req.body;
     try {
@@ -145,20 +148,17 @@ async function fetchVideoUrl(req, res) {
             const data = resData.data;
             let finalStreamUrl = "";
 
-            // YouTube Video ID Check
             if (data.video_id) {
                 const decryptedVid = decryptAppx(data.video_id);
-                if (decryptedVid && !decryptedVid.includes("http")) {
+                if (decryptedVid && !decryptedVid.includes("http") && decryptedVid.length < 20) {
                     finalStreamUrl = `https://youtu.be/${decryptedVid}`;
                 }
             }
 
-            // Direct Download Link
             if (!finalStreamUrl && data.download_link) {
                 finalStreamUrl = decryptAppx(data.download_link);
             } 
             
-            // Encrypted Stream Links (m3u8 / MPD)
             if (!finalStreamUrl && data.encrypted_links && data.encrypted_links.length > 0) {
                 const path = data.encrypted_links[0].path;
                 const key = data.encrypted_links[0].key;
