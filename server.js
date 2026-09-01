@@ -1,67 +1,28 @@
-import fetch from "node-fetch";
+const express = require("express");
+const cors = require("cors");
+const path = require("path");
+require("dotenv").config();
 
-const API_BASE = process.env.API_BASE || "rozgarapinew.teachx.in";
+const { fetchBatches, fetchSubjects, fetchTopics, fetchVideoUrl } = require("./modules/api.js");
 
-// 🔑 Apna Active User Token Aur User ID Yahan Set Karein
-const USER_TOKEN = process.env.APPX_TOKEN || "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."; 
-const USER_ID = process.env.APPX_USERID || "4300255";
+const app = express();
+const PORT = process.env.PORT || 10000;
 
-async function makeApiRequest(endpoint, bodyData = {}) {
-    try {
-        const response = await fetch(`https://${API_BASE}/${endpoint}`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-                "token": USER_TOKEN,
-                "authorization": USER_TOKEN,
-                "userid": USER_ID
-            },
-            body: JSON.stringify({
-                ...bodyData,
-                token: USER_TOKEN,
-                userid: USER_ID
-            })
-        });
-        return await response.json();
-    } catch (error) {
-        console.error(`API Error [${endpoint}]:`, error);
-        return { success: false, message: error.message };
-    }
-}
+app.use(cors());
+app.use(express.json());
+app.use(express.static(__dirname));
 
-export async function fetchBatches(req, res) {
-    const data = await makeApiRequest("get_batches", req.body);
-    // Standard response array mapping
-    const batchList = data.data || data.batches || data.result || [];
-    res.json(batchList);
-}
+// Serve test.html on root
+app.get("/", (req, res) => {
+    res.sendFile(path.join(__dirname, "test.html"));
+});
 
-export async function fetchSubjects(req, res) {
-    const { batch_id } = req.body;
-    const data = await makeApiRequest("get_subjects", { batch_id });
-    const subjectList = data.data || data.subjects || data.result || [];
-    res.json(subjectList);
-}
+// API Endpoints
+app.post("/api/batches", fetchBatches);
+app.post("/api/subjects", fetchSubjects);
+app.post("/api/topics", fetchTopics);
+app.post("/api/video", fetchVideoUrl);
 
-export async function fetchTopics(req, res) {
-    const { subject_id } = req.body;
-    const data = await makeApiRequest("get_topics", { subject_id });
-    const topicList = data.data || data.topics || data.result || [];
-    res.json(topicList);
-}
-
-export async function fetchVideoUrl(req, res) {
-    const { course_id, video_id } = req.body;
-    const data = await makeApiRequest("fetch_video", { course_id, video_id });
-    
-    if (data && data.data) {
-        res.json({
-            success: true,
-            video_url: data.data.video_url || data.data.stream_url || data.data.link,
-            pdf_url: data.data.pdf_url || null
-        });
-    } else {
-        res.status(400).json({ success: false, message: "Unable to extract video stream" });
-    }
-                }
+app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server successfully started on port ${PORT}`);
+});
