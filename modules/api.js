@@ -1,17 +1,25 @@
-import fetch from "node-fetch";
+const fetch = require("node-fetch");
 
 const API_BASE = process.env.API_BASE || "rozgarapinew.teachx.in";
+const USER_TOKEN = process.env.APPX_TOKEN || "";
+const USER_ID = process.env.APPX_USERID || "4300255";
 
-// Helper to make secure API requests
 async function makeApiRequest(endpoint, bodyData = {}) {
     try {
         const response = await fetch(`https://${API_BASE}/${endpoint}`, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+                "token": USER_TOKEN,
+                "authorization": USER_TOKEN,
+                "userid": USER_ID
             },
-            body: JSON.stringify(bodyData)
+            body: JSON.stringify({
+                ...bodyData,
+                token: USER_TOKEN,
+                userid: USER_ID
+            })
         });
         return await response.json();
     } catch (error) {
@@ -20,26 +28,29 @@ async function makeApiRequest(endpoint, bodyData = {}) {
     }
 }
 
-export async function fetchBatches(req, res) {
+async function fetchBatches(req, res) {
     const data = await makeApiRequest("get_batches", req.body);
-    res.json(data.data || data);
+    const batchList = data.data || data.batches || data.result || [];
+    res.json(batchList);
 }
 
-export async function fetchSubjects(req, res) {
+async function fetchSubjects(req, res) {
     const { batch_id } = req.body;
     const data = await makeApiRequest("get_subjects", { batch_id });
-    res.json(data.data || data);
+    const subjectList = data.data || data.subjects || data.result || [];
+    res.json(subjectList);
 }
 
-export async function fetchTopics(req, res) {
+async function fetchTopics(req, res) {
     const { subject_id } = req.body;
     const data = await makeApiRequest("get_topics", { subject_id });
-    res.json(data.data || data);
+    const topicList = data.data || data.topics || data.result || [];
+    res.json(topicList);
 }
 
-export async function fetchVideoUrl(req, res) {
-    const { course_id, video_id, token, userid } = req.body;
-    const data = await makeApiRequest("fetch_video", { course_id, video_id, token, userid });
+async function fetchVideoUrl(req, res) {
+    const { course_id, video_id } = req.body;
+    const data = await makeApiRequest("fetch_video", { course_id, video_id });
     
     if (data && data.data) {
         res.json({
@@ -50,4 +61,11 @@ export async function fetchVideoUrl(req, res) {
     } else {
         res.status(400).json({ success: false, message: "Unable to extract video stream" });
     }
-                              }
+}
+
+module.exports = {
+    fetchBatches,
+    fetchSubjects,
+    fetchTopics,
+    fetchVideoUrl
+};
