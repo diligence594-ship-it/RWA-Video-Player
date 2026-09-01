@@ -5,25 +5,46 @@ const USER_TOKEN = process.env.APPX_TOKEN || "";
 const USER_ID = process.env.APPX_USERID || "4300255";
 
 async function makeApiRequest(endpoint, bodyData = {}) {
+    // Universal headers required by TeachX/AppX backend
+    const headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "Dalvik/2.1.0 (Linux; U; Android 11; M2007J20CI Build/RP1A.200720.011)",
+        "token": USER_TOKEN,
+        "authorization": USER_TOKEN,
+        "userid": USER_ID,
+        "Accept": "application/json",
+        "Client-Service": "AppX",
+        "Auth-Key": "appxapi",
+        "User-ID": USER_ID
+    };
+
+    // Construct full URL (Handling optional /api/ or direct path)
+    const url = endpoint.startsWith("http") 
+        ? endpoint 
+        : `https://${API_BASE}/${endpoint.replace(/^\//, '')}`;
+
     try {
-        const response = await fetch(`https://${API_BASE}/${endpoint}`, {
+        const response = await fetch(url, {
             method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-                "token": USER_TOKEN,
-                "authorization": USER_TOKEN,
-                "userid": USER_ID
-            },
+            headers: headers,
             body: JSON.stringify({
                 ...bodyData,
                 token: USER_TOKEN,
                 userid: USER_ID
             })
         });
-        return await response.json();
+
+        const rawText = await response.text();
+
+        // Check if response is valid JSON before parsing
+        try {
+            return JSON.parse(rawText);
+        } catch (jsonErr) {
+            console.error(`[API HTML Blocked] URL: ${url} | Raw Response: ${rawText.substring(0, 150)}...`);
+            return { success: false, raw: rawText };
+        }
     } catch (error) {
-        console.error(`API Error [${endpoint}]:`, error);
+        console.error(`API Fetch Error [${endpoint}]:`, error);
         return { success: false, message: error.message };
     }
 }
