@@ -2,8 +2,8 @@ const fetch = require("node-fetch");
 const crypto = require("crypto");
 
 const API_BASE = process.env.API_BASE || "rozgarapinew.teachx.in";
-const USER_TOKEN = process.env.APPX_TOKEN || "";
-const USER_ID = process.env.APPX_USERID || "4300255";
+const DEFAULT_USER_TOKEN = process.env.APPX_TOKEN || "";
+const DEFAULT_USER_ID = process.env.APPX_USERID || "4300255";
 
 const AES_KEY = Buffer.from("638udh3829162018", "utf-8");
 const AES_IV = Buffer.from("fedcba9876543210", "utf-8");
@@ -25,22 +25,23 @@ function decryptAppx(encryptedText) {
     }
 }
 
-function getHeaders() {
+function getHeaders(token, userId) {
     return {
         "Client-Service": "Appx",
         "Auth-Key": "appxapi",
-        "Authorization": USER_TOKEN,
-        "User-ID": USER_ID,
+        "Authorization": token || DEFAULT_USER_TOKEN,
+        "User-ID": userId || DEFAULT_USER_ID,
         "User-Agent": "okhttp/4.9.1",
-        "source": "website",
-        "Content-Type": "application/json"
+        "source": "website"
     };
 }
 
 async function fetchBatches(req, res) {
+    const { token, user_id } = req.body;
+    const uid = user_id || DEFAULT_USER_ID;
     try {
-        const url = `https://${API_BASE}/get/mycoursev2?userid=${USER_ID}`;
-        const response = await fetch(url, { headers: getHeaders() });
+        const url = `https://${API_BASE}/get/mycoursev2?userid=${uid}`;
+        const response = await fetch(url, { headers: getHeaders(token, uid) });
         const data = await response.json();
         const rawCourses = data.data || [];
         const formattedBatches = rawCourses.map(item => ({
@@ -55,10 +56,10 @@ async function fetchBatches(req, res) {
 }
 
 async function fetchSubjects(req, res) {
-    const { batch_id } = req.body;
+    const { batch_id, token, user_id } = req.body;
     try {
         const url = `https://${API_BASE}/get/allsubjectfrmlivecourseclass?courseid=${batch_id}&start=-1`;
-        const response = await fetch(url, { headers: getHeaders() });
+        const response = await fetch(url, { headers: getHeaders(token, user_id) });
         const data = await response.json();
         const rawSubjects = data.data || [];
         const formattedSubjects = rawSubjects.map(item => ({
@@ -73,10 +74,10 @@ async function fetchSubjects(req, res) {
 }
 
 async function fetchTopics(req, res) {
-    const { course_id, subject_id } = req.body;
+    const { course_id, subject_id, token, user_id } = req.body;
     try {
         const url = `https://${API_BASE}/get/alltopicfrmlivecourseclass?courseid=${course_id}&subjectid=${subject_id}&start=-1`;
-        const response = await fetch(url, { headers: getHeaders() });
+        const response = await fetch(url, { headers: getHeaders(token, user_id) });
         const data = await response.json();
         const rawTopics = data.data || [];
         const formattedTopics = rawTopics.map(item => ({
@@ -91,36 +92,33 @@ async function fetchTopics(req, res) {
 }
 
 async function fetchLectures(req, res) {
-    const { course_id, subject_id, topic_id } = req.body;
+    const { course_id, subject_id, topic_id, token, user_id } = req.body;
     try {
         let rawVideos = [];
+        const headers = getHeaders(token, user_id);
 
         let url1 = `https://${API_BASE}/get/livecourseclassbycoursesubtopconceptapiv3?courseid=${course_id}&subjectid=${subject_id}&topicid=${topic_id}&conceptid=&start=-1`;
-        let res1 = await fetch(url1, { headers: getHeaders() });
+        let res1 = await fetch(url1, { headers });
         let data1 = await res1.json();
-        if (data1.data && data1.data.length > 0) {
-            rawVideos = data1.data;
-        }
+        if (data1.data && data1.data.length > 0) rawVideos = data1.data;
 
         if (rawVideos.length === 0) {
             let url2 = `https://${API_BASE}/get/livecourseclassbycoursesubtopconceptapiv3?courseid=${course_id}&subjectid=${subject_id}&topicid=&conceptid=${topic_id}&start=-1`;
-            let res2 = await fetch(url2, { headers: getHeaders() });
+            let res2 = await fetch(url2, { headers });
             let data2 = await res2.json();
-            if (data2.data && data2.data.length > 0) {
-                rawVideos = data2.data;
-            }
+            if (data2.data && data2.data.length > 0) rawVideos = data2.data;
         }
 
         if (rawVideos.length === 0) {
             let conceptUrl = `https://${API_BASE}/get/allconceptfrmlivecourseclass?courseid=${course_id}&subjectid=${subject_id}&topicid=${topic_id}&start=-1`;
-            let resConcept = await fetch(conceptUrl, { headers: getHeaders() });
+            let resConcept = await fetch(conceptUrl, { headers });
             let dataConcept = await resConcept.json();
             let concepts = dataConcept.data || [];
 
             for (let concept of concepts) {
                 let cid = concept.conceptid || concept.id;
                 let url3 = `https://${API_BASE}/get/livecourseclassbycoursesubtopconceptapiv3?courseid=${course_id}&subjectid=${subject_id}&topicid=${topic_id}&conceptid=${cid}&start=-1`;
-                let res3 = await fetch(url3, { headers: getHeaders() });
+                let res3 = await fetch(url3, { headers });
                 let data3 = await res3.json();
                 if (data3.data && data3.data.length > 0) {
                     rawVideos = rawVideos.concat(data3.data);
@@ -141,48 +139,54 @@ async function fetchLectures(req, res) {
 }
 
 async function fetchVideoUrl(req, res) {
-    const { course_id, video_id } = req.body;
+    const { course_id, video_id, token, user_id } = req.body;
+    const reqToken = token || DEFAULT_USER_TOKEN;
+    const reqUserId = user_id || DEFAULT_USER_ID;
+
     try {
         const url = `https://${API_BASE}/get/fetchVideoDetailsById?course_id=${course_id}&video_id=${video_id}&ytflag=0&folder_wise_course=0`;
-        const response = await fetch(url, { headers: getHeaders() });
+        const response = await fetch(url, { headers: getHeaders(reqToken, reqUserId) });
         const resData = await response.json();
 
         if (resData && resData.data) {
             const data = resData.data;
-            let finalStreamUrl = "";
+            let rawStreamUrl = "";
 
             if (data.video_id) {
                 const decryptedVid = decryptAppx(data.video_id);
                 if (decryptedVid && !decryptedVid.includes("http") && decryptedVid.length < 20) {
-                    finalStreamUrl = `https://youtu.be/${decryptedVid}`;
+                    return res.json({
+                        success: true,
+                        video_url: `https://youtu.be/${decryptedVid}`,
+                        is_youtube: true
+                    });
                 }
             }
 
-            if (!finalStreamUrl && data.download_link) {
-                finalStreamUrl = decryptAppx(data.download_link);
+            if (!rawStreamUrl && data.download_link) {
+                rawStreamUrl = decryptAppx(data.download_link);
             } 
             
-            if (!finalStreamUrl && data.encrypted_links && data.encrypted_links.length > 0) {
+            if (!rawStreamUrl && data.encrypted_links && data.encrypted_links.length > 0) {
                 const path = data.encrypted_links[0].path;
-                const key = data.encrypted_links[0].key;
                 if (path) {
-                    const da = decryptAppx(path);
-                    if (key) {
-                        const dk = Buffer.from(decryptAppx(key), "base64").toString("utf-8");
-                        finalStreamUrl = `${da}*${dk}`;
-                    } else {
-                        finalStreamUrl = da;
-                    }
+                    rawStreamUrl = decryptAppx(path);
                 }
             }
 
             let pdfUrl = data.pdf_link ? decryptAppx(data.pdf_link) : "";
 
-            return res.json({
-                success: true,
-                video_url: finalStreamUrl,
-                pdf_url: pdfUrl
-            });
+            if (rawStreamUrl) {
+                const queryAuth = `&token=${encodeURIComponent(reqToken)}&userid=${encodeURIComponent(reqUserId)}`;
+                const finalProxyUrl = `/api/proxy?url=${encodeURIComponent(rawStreamUrl)}${queryAuth}`;
+                
+                return res.json({
+                    success: true,
+                    video_url: finalProxyUrl,
+                    raw_url: rawStreamUrl,
+                    pdf_url: pdfUrl
+                });
+            }
         }
 
         res.status(400).json({ success: false, message: "No stream data found" });
@@ -192,50 +196,56 @@ async function fetchVideoUrl(req, res) {
     }
 }
 
-// SIGNED M3U8 REWRITER PROXY (Fixes stream breaking issues)
 async function proxyStream(req, res) {
     const videoUrl = req.query.url;
+    const reqToken = req.query.token || DEFAULT_USER_TOKEN;
+    const reqUserId = req.query.userid || DEFAULT_USER_ID;
+
     if (!videoUrl) return res.status(400).send("No stream URL provided");
 
     try {
-        const response = await fetch(videoUrl, { headers: getHeaders() });
-        const contentType = response.headers.get("content-type") || "";
+        const response = await fetch(videoUrl, { headers: getHeaders(reqToken, reqUserId) });
 
         res.setHeader("Access-Control-Allow-Origin", "*");
+        res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
         res.setHeader("Access-Control-Allow-Headers", "*");
 
-        if (videoUrl.includes(".m3u8")) {
+        if (req.method === "OPTIONS") return res.sendStatus(200);
+
+        const contentType = response.headers.get("content-type") || "";
+
+        if (videoUrl.includes(".m3u8") || contentType.includes("mpegurl") || contentType.includes("x-mpegurl")) {
             res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
             let m3u8Text = await response.text();
 
-            const urlObj = new URL(videoUrl);
             const baseUrl = videoUrl.substring(0, videoUrl.lastIndexOf("/") + 1);
-            const searchParams = urlObj.search; 
+            const authParams = `&token=${encodeURIComponent(reqToken)}&userid=${encodeURIComponent(reqUserId)}`;
 
-            // Dynamic M3U8 segment rewriting with appx signature preservation
-            const rewrittenM3u8 = m3u8Text.split("\n").map(line => {
-                line = line.trim();
-                if (line.length > 0 && !line.startsWith("#")) {
-                    let fullSegmentUrl = "";
-                    
-                    if (line.startsWith("http://") || line.startsWith("https://")) {
-                        fullSegmentUrl = line;
-                    } else {
-                        const cleanLine = line.split("?")[0];
-                        fullSegmentUrl = baseUrl + cleanLine + searchParams;
-                    }
-                    
-                    return `/api/proxy?url=${encodeURIComponent(fullSegmentUrl)}`;
+            const lines = m3u8Text.split(/\r?\n/);
+            const rewrittenLines = lines.map(line => {
+                let trimmed = line.trim();
+                if (!trimmed) return line;
+
+                if (trimmed.startsWith("#EXT-X-KEY:")) {
+                    return trimmed.replace(/URI="([^"]+)"/, (match, uri) => {
+                        let absoluteUri = uri.startsWith("http") ? uri : new URL(uri, baseUrl).href;
+                        return `URI="/api/proxy?url=${encodeURIComponent(absoluteUri)}${authParams}"`;
+                    });
                 }
-                return line;
-            }).join("\n");
 
-            return res.send(rewrittenM3u8);
+                if (!trimmed.startsWith("#")) {
+                    let absoluteSegmentUrl = trimmed.startsWith("http") ? trimmed : new URL(trimmed, baseUrl).href;
+                    return `/api/proxy?url=${encodeURIComponent(absoluteSegmentUrl)}${authParams}`;
+                }
+
+                return line;
+            });
+
+            return res.send(rewrittenLines.join("\n"));
         } else {
-            // Binary Video Chunks (.ts fragments)
             if (contentType) res.setHeader("Content-Type", contentType);
-            const arrayBuffer = await response.arrayBuffer();
-            return res.send(Buffer.from(arrayBuffer));
+            const buffer = await response.buffer();
+            return res.send(buffer);
         }
     } catch (err) {
         console.error("Stream Proxy Error:", err.message);
