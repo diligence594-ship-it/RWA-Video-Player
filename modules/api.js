@@ -5,8 +5,8 @@ const API_BASE = process.env.API_BASE || "rozgarapinew.teachx.in";
 const USER_TOKEN = process.env.APPX_TOKEN || "";
 const USER_ID = process.env.APPX_USERID || "4300255";
 
-const AES_KEY = Buffer.from("638udh3829162018", "utf-8");[cite: 1, 2, 3, 4]
-const AES_IV = Buffer.from("fedcba9876543210", "utf-8");[cite: 1, 2, 3, 4]
+const AES_KEY = Buffer.from("638udh3829162018", "utf-8");
+const AES_IV = Buffer.from("fedcba9876543210", "utf-8");
 
 function decryptAppx(encryptedText) {
     if (!encryptedText) return "";
@@ -36,7 +36,6 @@ function getHeaders() {
     };
 }
 
-// 1. Fetch Batches with Proper Field Mapping
 async function fetchBatches(req, res) {
     try {
         const url = `https://${API_BASE}/get/mycoursev2?userid=${USER_ID}`;
@@ -45,7 +44,6 @@ async function fetchBatches(req, res) {
         
         const rawCourses = data.data || [];
         
-        // Frontend support ke liye standard structure map kar rahe hain
         const formattedBatches = rawCourses.map(item => ({
             id: item.id || item.course_id || item.courseid,
             name: item.course_name || item.title || item.name || "Untitled Batch",
@@ -59,7 +57,6 @@ async function fetchBatches(req, res) {
     }
 }
 
-// 2. Fetch Subjects
 async function fetchSubjects(req, res) {
     const { batch_id } = req.body;
     try {
@@ -80,7 +77,6 @@ async function fetchSubjects(req, res) {
     }
 }
 
-// 3. Fetch Topics
 async function fetchTopics(req, res) {
     const { course_id, subject_id } = req.body;
     try {
@@ -102,11 +98,10 @@ async function fetchTopics(req, res) {
     }
 }
 
-// 4. Fetch Decrypted Video URL
 async function fetchVideoUrl(req, res) {
     const { course_id, video_id } = req.body;
     try {
-        const url = `https://${API_BASE}/get/fetchVideoDetailsById?course_id=${course_id}&video_id=${video_id}&ytflag=0&folder_wise_course=0`;[cite: 1, 2, 3, 4]
+        const url = `https://${API_BASE}/get/fetchVideoDetailsById?course_id=${course_id}&video_id=${video_id}&ytflag=0&folder_wise_course=0`;
         const response = await fetch(url, { headers: getHeaders() });
         const resData = await response.json();
 
@@ -114,10 +109,10 @@ async function fetchVideoUrl(req, res) {
             const data = resData.data;
             let finalStreamUrl = "";
 
-            if (data.download_link) {[cite: 1, 2, 3, 4]
+            if (data.download_link) {
                 finalStreamUrl = decryptAppx(data.download_link);
-            } else if (data.encrypted_links && data.encrypted_links.length > 0) {[cite: 1, 2, 3, 4]
-                const path = data.encrypted_links[0].path;[cite: 1, 2, 3, 4]
+            } else if (data.encrypted_links && data.encrypted_links.length > 0) {
+                const path = data.encrypted_links[0].path;
                 if (path) finalStreamUrl = decryptAppx(path);
             }
 
