@@ -13,11 +13,12 @@
         select { padding: 12px; background: #161b22; color: #f0f6fc; border: 1px solid #30363d; border-radius: 6px; font-size: 1rem; outline: none; }
         select:focus { border-color: #58a6ff; }
         video { width: 100%; max-width: 850px; background: #000; border-radius: 8px; border: 1px solid #30363d; aspect-ratio: 16/9; }
+        .pdf-btn { display: inline-block; padding: 10px 15px; background: #238636; color: #fff; text-decoration: none; border-radius: 6px; font-weight: bold; text-align: center; margin-top: 10px; }
     </style>
 </head>
 <body>
 
-    <h1>Batch Video Player</h1>
+    <h1>『 𝐌𝐑𝐒𝐓𝐑𝐀𝐍𝐆𝐄𝐑™ 』 Video Player</h1>
 
     <div class="controls">
         <select id="batchSelect" onchange="loadSubjects()">
@@ -28,9 +29,15 @@
             <option value="">-- Select Subject --</option>
         </select>
 
-        <select id="topicSelect" onchange="playSelectedVideo()">
-            <option value="">-- Select Lecture / Topic --</option>
+        <select id="topicSelect" onchange="loadLectures()">
+            <option value="">-- Select Topic --</option>
         </select>
+
+        <select id="lectureSelect" onchange="playSelectedVideo()">
+            <option value="">-- Select Lecture --</option>
+        </select>
+
+        <a id="pdfLink" class="pdf-btn" style="display: none;" target="_blank">Download PDF Notes</a>
     </div>
 
     <video id="videoPlayer" controls></video>
@@ -47,8 +54,8 @@
             if (Array.isArray(data)) {
                 data.forEach(batch => {
                     let opt = document.createElement('option');
-                    opt.value = batch.id || batch.batch_id;
-                    opt.textContent = batch.name || batch.batch_name;
+                    opt.value = batch.id;
+                    opt.textContent = batch.name;
                     batchSelect.appendChild(opt);
                 });
             }
@@ -60,6 +67,8 @@
     async function loadSubjects() {
         const batchId = document.getElementById('batchSelect').value;
         const subjectSelect = document.getElementById('subjectSelect');
+        document.getElementById('topicSelect').innerHTML = '<option value="">-- Select Topic --</option>';
+        document.getElementById('lectureSelect').innerHTML = '<option value="">-- Select Lecture --</option>';
         subjectSelect.innerHTML = '<option value="">-- Select Subject --</option>';
 
         if (!batchId) return;
@@ -75,8 +84,8 @@
             if (Array.isArray(data)) {
                 data.forEach(sub => {
                     let opt = document.createElement('option');
-                    opt.value = sub.id || sub.subject_id;
-                    opt.textContent = sub.name || sub.subject_name;
+                    opt.value = sub.id;
+                    opt.textContent = sub.name;
                     subjectSelect.appendChild(opt);
                 });
             }
@@ -86,9 +95,11 @@
     }
 
     async function loadTopics() {
+        const batchId = document.getElementById('batchSelect').value;
         const subjectId = document.getElementById('subjectSelect').value;
         const topicSelect = document.getElementById('topicSelect');
-        topicSelect.innerHTML = '<option value="">-- Select Lecture / Topic --</option>';
+        document.getElementById('lectureSelect').innerHTML = '<option value="">-- Select Lecture --</option>';
+        topicSelect.innerHTML = '<option value="">-- Select Topic --</option>';
 
         if (!subjectId) return;
 
@@ -96,15 +107,15 @@
             const res = await fetch('/api/topics', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ subject_id: subjectId })
+                body: JSON.stringify({ course_id: batchId, subject_id: subjectId })
             });
             const data = await res.json();
 
             if (Array.isArray(data)) {
                 data.forEach(topic => {
                     let opt = document.createElement('option');
-                    opt.value = topic.video_url || topic.link || topic.url;
-                    opt.textContent = topic.name || topic.title;
+                    opt.value = topic.id;
+                    opt.textContent = topic.name;
                     topicSelect.appendChild(opt);
                 });
             }
@@ -113,29 +124,85 @@
         }
     }
 
-    function playSelectedVideo() {
-        const videoUrl = document.getElementById('topicSelect').value;
-        const video = document.getElementById('videoPlayer');
+    async function loadLectures() {
+        const batchId = document.getElementById('batchSelect').value;
+        const subjectId = document.getElementById('subjectSelect').value;
+        const topicId = document.getElementById('topicSelect').value;
+        const lectureSelect = document.getElementById('lectureSelect');
+        lectureSelect.innerHTML = '<option value="">-- Select Lecture --</option>';
 
-        if (!videoUrl) return;
+        if (!topicId) return;
 
-        if (hlsInstance) {
-            hlsInstance.destroy();
-        }
+        try {
+            const res = await fetch('/api/lectures', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ course_id: batchId, subject_id: subjectId, topic_id: topicId })
+            });
+            const data = await res.json();
 
-        if (videoUrl.includes('.m3u8')) {
-            if (Hls.isSupported()) {
-                hlsInstance = new Hls();
-                hlsInstance.loadSource(videoUrl);
-                hlsInstance.attachMedia(video);
-                hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => video.play());
-            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                video.src = videoUrl;
-                video.play();
+            if (Array.isArray(data)) {
+                data.forEach(lec => {
+                    let opt = document.createElement('option');
+                    opt.value = lec.video_id || lec.id;
+                    opt.textContent = lec.name;
+                    lectureSelect.appendChild(opt);
+                });
             }
-        } else {
-            video.src = videoUrl;
-            video.play();
+        } catch (err) {
+            console.error("Lectures fetch error:", err);
+        }
+    }
+
+    async function playSelectedVideo() {
+        const batchId = document.getElementById('batchSelect').value;
+        const videoId = document.getElementById('lectureSelect').value;
+        const video = document.getElementById('videoPlayer');
+        const pdfBtn = document.getElementById('pdfLink');
+
+        if (!videoId) return;
+
+        try {
+            const res = await fetch('/api/video', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ course_id: batchId, video_id: videoId })
+            });
+            const data = await res.json();
+
+            if (data.success && data.video_url) {
+                const videoUrl = data.video_url;
+
+                if (data.pdf_url) {
+                    pdfBtn.href = data.pdf_url;
+                    pdfBtn.style.display = 'inline-block';
+                } else {
+                    pdfBtn.style.display = 'none';
+                }
+
+                if (hlsInstance) {
+                    hlsInstance.destroy();
+                }
+
+                if (videoUrl.includes('.m3u8')) {
+                    if (Hls.isSupported()) {
+                        hlsInstance = new Hls();
+                        hlsInstance.loadSource(videoUrl);
+                        hlsInstance.attachMedia(video);
+                        hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => video.play());
+                    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                        video.src = videoUrl;
+                        video.play();
+                    }
+                } else {
+                    video.src = videoUrl;
+                    video.play();
+                }
+            } else {
+                alert("Stream URL encrypted ya unavailable hai.");
+            }
+        } catch (err) {
+            console.error("Play Video Error:", err);
         }
     }
 </script>
