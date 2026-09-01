@@ -42,13 +42,11 @@ async function fetchBatches(req, res) {
         const url = `https://${API_BASE}/get/mycoursev2?userid=${USER_ID}`;
         const response = await fetch(url, { headers: getHeaders() });
         const data = await response.json();
-        
         const rawCourses = data.data || [];
         const formattedBatches = rawCourses.map(item => ({
-            id: item.id || item.course_id || item.courseid,
+            id: String(item.id || item.course_id || item.courseid),
             name: item.course_name || item.title || item.name || "Untitled Batch"
         }));
-
         res.json(formattedBatches);
     } catch (err) {
         console.error("Batches Fetch Error:", err.message);
@@ -62,13 +60,11 @@ async function fetchSubjects(req, res) {
         const url = `https://${API_BASE}/get/allsubjectfrmlivecourseclass?courseid=${batch_id}&start=-1`;
         const response = await fetch(url, { headers: getHeaders() });
         const data = await response.json();
-        
         const rawSubjects = data.data || [];
         const formattedSubjects = rawSubjects.map(item => ({
-            id: item.subjectid || item.id || item.subject_id,
+            id: String(item.subjectid || item.id || item.subject_id),
             name: item.subject_name || item.name || "Subject"
         }));
-
         res.json(formattedSubjects);
     } catch (err) {
         console.error("Subjects Fetch Error:", err.message);
@@ -82,13 +78,11 @@ async function fetchTopics(req, res) {
         const url = `https://${API_BASE}/get/alltopicfrmlivecourseclass?courseid=${course_id}&subjectid=${subject_id}&start=-1`;
         const response = await fetch(url, { headers: getHeaders() });
         const data = await response.json();
-        
         const rawTopics = data.data || [];
         const formattedTopics = rawTopics.map(item => ({
-            id: item.topicid || item.id || item.topic_id,
+            id: String(item.topicid || item.id || item.topic_id),
             name: item.topic_name || item.name || item.title || "Topic"
         }));
-
         res.json(formattedTopics);
     } catch (err) {
         console.error("Topics Fetch Error:", err.message);
@@ -96,38 +90,47 @@ async function fetchTopics(req, res) {
     }
 }
 
-// Fixed Multi-Fallback Lectures Engine
 async function fetchLectures(req, res) {
     const { course_id, subject_id, topic_id } = req.body;
     try {
         let rawVideos = [];
 
-        // Attempt 1: Standard Topic Classes
-        let url = `https://${API_BASE}/get/livecourseclassbycoursesubtopconceptapiv3?courseid=${course_id}&subjectid=${subject_id}&topicid=${topic_id}&conceptid=&start=-1`;
-        let response = await fetch(url, { headers: getHeaders() });
-        let data = await response.json();
-        rawVideos = data.data || [];
-
-        // Attempt 2: Concept ID based fetch
-        if (!rawVideos || rawVideos.length === 0) {
-            url = `https://${API_BASE}/get/livecourseclassbycoursesubtopconceptapiv3?courseid=${course_id}&subjectid=${subject_id}&topicid=&conceptid=${topic_id}&start=-1`;
-            response = await fetch(url, { headers: getHeaders() });
-            data = await response.json();
-            rawVideos = data.data || [];
+        let url1 = `https://${API_BASE}/get/livecourseclassbycoursesubtopconceptapiv3?courseid=${course_id}&subjectid=${subject_id}&topicid=${topic_id}&conceptid=&start=-1`;
+        let res1 = await fetch(url1, { headers: getHeaders() });
+        let data1 = await res1.json();
+        if (data1.data && data1.data.length > 0) {
+            rawVideos = data1.data;
         }
 
-        // Attempt 3: Direct Video Endpoint
-        if (!rawVideos || rawVideos.length === 0) {
-            url = `https://${API_BASE}/get/allvideofrmlivecourseclass?courseid=${course_id}&subjectid=${subject_id}&topicid=${topic_id}&start=-1`;
-            response = await fetch(url, { headers: getHeaders() });
-            data = await response.json();
-            rawVideos = data.data || [];
+        if (rawVideos.length === 0) {
+            let url2 = `https://${API_BASE}/get/livecourseclassbycoursesubtopconceptapiv3?courseid=${course_id}&subjectid=${subject_id}&topicid=&conceptid=${topic_id}&start=-1`;
+            let res2 = await fetch(url2, { headers: getHeaders() });
+            let data2 = await res2.json();
+            if (data2.data && data2.data.length > 0) {
+                rawVideos = data2.data;
+            }
         }
 
-        const formattedVideos = rawVideos.map(item => ({
-            id: item.id || item.video_id || item.v_id,
-            name: item.title || item.name || item.video_title || "Lecture Video",
-            video_id: item.id || item.video_id
+        if (rawVideos.length === 0) {
+            let conceptUrl = `https://${API_BASE}/get/allconceptfrmlivecourseclass?courseid=${course_id}&subjectid=${subject_id}&topicid=${topic_id}&start=-1`;
+            let resConcept = await fetch(conceptUrl, { headers: getHeaders() });
+            let dataConcept = await resConcept.json();
+            let concepts = dataConcept.data || [];
+
+            for (let concept of concepts) {
+                let cid = concept.conceptid || concept.id;
+                let url3 = `https://${API_BASE}/get/livecourseclassbycoursesubtopconceptapiv3?courseid=${course_id}&subjectid=${subject_id}&topicid=${topic_id}&conceptid=${cid}&start=-1`;
+                let res3 = await fetch(url3, { headers: getHeaders() });
+                let data3 = await res3.json();
+                if (data3.data && data3.data.length > 0) {
+                    rawVideos = rawVideos.concat(data3.data);
+                }
+            }
+        }
+
+        const formattedVideos = rawVideos.map((item, idx) => ({
+            id: String(item.id || item.video_id || item.v_id || idx),
+            name: item.title || item.name || item.video_title || `Lecture ${idx + 1}`
         }));
 
         res.json(formattedVideos);
@@ -189,10 +192,31 @@ async function fetchVideoUrl(req, res) {
     }
 }
 
+// APPROACH 2: STREAM PROXY (Token Headers Injector)
+async function proxyStream(req, res) {
+    const videoUrl = req.query.url;
+    if (!videoUrl) return res.status(400).send("No stream URL provided");
+
+    try {
+        const streamRes = await fetch(videoUrl, {
+            headers: getHeaders()
+        });
+
+        res.setHeader("Access-Control-Allow-Origin", "*");
+        res.setHeader("Content-Type", streamRes.headers.get("content-type") || "application/x-mpegURL");
+        
+        streamRes.body.pipe(res);
+    } catch (err) {
+        console.error("Stream Proxy Error:", err.message);
+        res.status(500).send("Proxy Error: " + err.message);
+    }
+}
+
 module.exports = {
     fetchBatches,
     fetchSubjects,
     fetchTopics,
     fetchLectures,
-    fetchVideoUrl
+    fetchVideoUrl,
+    proxyStream
 };
