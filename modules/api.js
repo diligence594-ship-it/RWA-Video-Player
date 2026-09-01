@@ -5,15 +5,13 @@ const API_BASE = process.env.API_BASE || "rozgarapinew.teachx.in";
 const USER_TOKEN = process.env.APPX_TOKEN || "";
 const USER_ID = process.env.APPX_USERID || "4300255";
 
-// AppX Standard Encryption Parameters Extracted From Source Code
-const AES_KEY = Buffer.from("638udh3829162018", "utf-8");
-const AES_IV = Buffer.from("fedcba9876543210", "utf-8");
+const AES_KEY = Buffer.from("638udh3829162018", "utf-8");[cite: 1, 2, 3, 4]
+const AES_IV = Buffer.from("fedcba9876543210", "utf-8");[cite: 1, 2, 3, 4]
 
-// AppX AES Decrypter
 function decryptAppx(encryptedText) {
     if (!encryptedText) return "";
     try {
-        const cleanEnc = encryptedText.split(":")[0];
+        const cleanEnc = encryptedText.split("*")[0].split(":")[0];
         const encryptedBytes = Buffer.from(cleanEnc, "base64");
         
         const decipher = crypto.createDecipheriv("aes-128-cbc", AES_KEY, AES_IV);
@@ -23,7 +21,6 @@ function decryptAppx(encryptedText) {
         decrypted += decipher.final("utf-8");
         return decrypted.trim();
     } catch (err) {
-        console.error("AES Decryption Error:", err.message);
         return encryptedText;
     }
 }
@@ -39,20 +36,30 @@ function getHeaders() {
     };
 }
 
+// 1. Fetch Batches with Proper Field Mapping
 async function fetchBatches(req, res) {
     try {
         const url = `https://${API_BASE}/get/mycoursev2?userid=${USER_ID}`;
         const response = await fetch(url, { headers: getHeaders() });
         const data = await response.json();
         
-        const courses = data.data || [];
-        res.json(courses);
+        const rawCourses = data.data || [];
+        
+        // Frontend support ke liye standard structure map kar rahe hain
+        const formattedBatches = rawCourses.map(item => ({
+            id: item.id || item.course_id || item.courseid,
+            name: item.course_name || item.title || item.name || "Untitled Batch",
+            image: item.cover_image || item.image || ""
+        }));
+
+        res.json(formattedBatches);
     } catch (err) {
         console.error("Batches Fetch Error:", err.message);
         res.json([]);
     }
 }
 
+// 2. Fetch Subjects
 async function fetchSubjects(req, res) {
     const { batch_id } = req.body;
     try {
@@ -60,13 +67,20 @@ async function fetchSubjects(req, res) {
         const response = await fetch(url, { headers: getHeaders() });
         const data = await response.json();
         
-        res.json(data.data || []);
+        const rawSubjects = data.data || [];
+        const formattedSubjects = rawSubjects.map(item => ({
+            id: item.id || item.subject_id || item.subjectid,
+            name: item.subject_name || item.name || "Subject"
+        }));
+
+        res.json(formattedSubjects);
     } catch (err) {
         console.error("Subjects Fetch Error:", err.message);
         res.json([]);
     }
 }
 
+// 3. Fetch Topics
 async function fetchTopics(req, res) {
     const { course_id, subject_id } = req.body;
     try {
@@ -74,17 +88,25 @@ async function fetchTopics(req, res) {
         const response = await fetch(url, { headers: getHeaders() });
         const data = await response.json();
         
-        res.json(data.data || []);
+        const rawTopics = data.data || [];
+        const formattedTopics = rawTopics.map(item => ({
+            id: item.id || item.topic_id || item.topicid,
+            name: item.topic_name || item.name || "Topic",
+            video_id: item.video_id || item.id
+        }));
+
+        res.json(formattedTopics);
     } catch (err) {
         console.error("Topics Fetch Error:", err.message);
         res.json([]);
     }
 }
 
+// 4. Fetch Decrypted Video URL
 async function fetchVideoUrl(req, res) {
     const { course_id, video_id } = req.body;
     try {
-        const url = `https://${API_BASE}/get/fetchVideoDetailsById?course_id=${course_id}&video_id=${video_id}&ytflag=0&folder_wise_course=0`;
+        const url = `https://${API_BASE}/get/fetchVideoDetailsById?course_id=${course_id}&video_id=${video_id}&ytflag=0&folder_wise_course=0`;[cite: 1, 2, 3, 4]
         const response = await fetch(url, { headers: getHeaders() });
         const resData = await response.json();
 
@@ -92,23 +114,14 @@ async function fetchVideoUrl(req, res) {
             const data = resData.data;
             let finalStreamUrl = "";
 
-            // 1. Direct Download Link Extraction
-            if (data.download_link) {
+            if (data.download_link) {[cite: 1, 2, 3, 4]
                 finalStreamUrl = decryptAppx(data.download_link);
-            } 
-            // 2. Encrypted Links Array Fallback
-            else if (data.encrypted_links && data.encrypted_links.length > 0) {
-                const path = data.encrypted_links[0].path;
-                if (path) {
-                    finalStreamUrl = decryptAppx(path);
-                }
+            } else if (data.encrypted_links && data.encrypted_links.length > 0) {[cite: 1, 2, 3, 4]
+                const path = data.encrypted_links[0].path;[cite: 1, 2, 3, 4]
+                if (path) finalStreamUrl = decryptAppx(path);
             }
 
-            // 3. Extracted PDF Link (if present)
-            let pdfUrl = "";
-            if (data.pdf_link) {
-                pdfUrl = decryptAppx(data.pdf_link);
-            }
+            let pdfUrl = data.pdf_link ? decryptAppx(data.pdf_link) : "";
 
             return res.json({
                 success: true,
@@ -119,7 +132,7 @@ async function fetchVideoUrl(req, res) {
 
         res.status(400).json({ success: false, message: "No stream data found" });
     } catch (err) {
-        console.error("Video Stream Extraction Error:", err.message);
+        console.error("Video Fetch Error:", err.message);
         res.status(500).json({ success: false, error: err.message });
     }
 }
