@@ -8,6 +8,7 @@ const USER_ID = process.env.APPX_USERID || "4300255";
 const AES_KEY = Buffer.from("638udh3829162018", "utf-8");
 const AES_IV = Buffer.from("fedcba9876543210", "utf-8");
 
+// AppX Decryption Engine
 function decryptAppx(encryptedText) {
     if (!encryptedText) return "";
     try {
@@ -32,10 +33,12 @@ function getHeaders() {
         "Authorization": USER_TOKEN,
         "User-ID": USER_ID,
         "User-Agent": "okhttp/4.9.1",
+        "source": "website",
         "Content-Type": "application/json"
     };
 }
 
+// 1. Batches Fetching
 async function fetchBatches(req, res) {
     try {
         const url = `https://${API_BASE}/get/mycoursev2?userid=${USER_ID}`;
@@ -57,16 +60,17 @@ async function fetchBatches(req, res) {
     }
 }
 
+// 2. Subjects Fetching
 async function fetchSubjects(req, res) {
     const { batch_id } = req.body;
     try {
-        const url = `https://${API_BASE}/get/allsubjectfrmlivecourseclass?courseid=${batch_id}&start=-1&userid=${USER_ID}`;
+        const url = `https://${API_BASE}/get/allsubjectfrmlivecourseclass?courseid=${batch_id}&start=-1`;
         const response = await fetch(url, { headers: getHeaders() });
         const data = await response.json();
         
         const rawSubjects = data.data || [];
         const formattedSubjects = rawSubjects.map(item => ({
-            id: item.id || item.subject_id || item.subjectid,
+            id: item.subjectid || item.id || item.subject_id,
             name: item.subject_name || item.name || "Subject"
         }));
 
@@ -77,39 +81,18 @@ async function fetchSubjects(req, res) {
     }
 }
 
-// Updated Topics & Folder Handler
+// 3. Topics Fetching
 async function fetchTopics(req, res) {
-    const { course_id, subject_id, folder_id = "0" } = req.body;
+    const { course_id, subject_id } = req.body;
     try {
-        let rawItems = [];
-
-        // 1. Try Standard Topic List
-        let url = `https://${API_BASE}/get/alltopicfrmlivecourseclass?courseid=${course_id}&subjectid=${subject_id}&start=-1&userid=${USER_ID}`;
-        let response = await fetch(url, { headers: getHeaders() });
-        let data = await response.json();
-        rawItems = data.data || [];
-
-        // 2. Fallback: Folder / Concept wise Video List
-        if (!rawItems || rawItems.length === 0) {
-            url = `https://${API_BASE}/get/allconceptfolderwise?courseid=${course_id}&subjectid=${subject_id}&folderid=${folder_id}&start=-1&userid=${USER_ID}`;
-            response = await fetch(url, { headers: getHeaders() });
-            data = await response.json();
-            rawItems = data.data || [];
-        }
-
-        // 3. Fallback: Direct Video Endpoint
-        if (!rawItems || rawItems.length === 0) {
-            url = `https://${API_BASE}/get/allvideofrmlivecourseclass?courseid=${course_id}&subjectid=${subject_id}&topicid=${folder_id}&start=-1&userid=${USER_ID}`;
-            response = await fetch(url, { headers: getHeaders() });
-            data = await response.json();
-            rawItems = data.data || [];
-        }
-
-        const formattedTopics = rawItems.map(item => ({
-            id: item.id || item.topic_id || item.topicid || item.video_id,
-            name: item.title || item.topic_name || item.name || item.video_title || "Lecture",
-            video_id: item.video_id || item.id || "",
-            is_folder: item.is_folder || (item.folder_name ? true : false)
+        const url = `https://${API_BASE}/get/alltopicfrmlivecourseclass?courseid=${course_id}&subjectid=${subject_id}&start=-1`;
+        const response = await fetch(url, { headers: getHeaders() });
+        const data = await response.json();
+        
+        const rawTopics = data.data || [];
+        const formattedTopics = rawTopics.map(item => ({
+            id: item.topicid || item.id || item.topic_id,
+            name: item.topic_name || item.name || "Topic"
         }));
 
         res.json(formattedTopics);
@@ -119,6 +102,29 @@ async function fetchTopics(req, res) {
     }
 }
 
+// 4. Actual Lectures/Videos Fetching (Python script concept applied)
+async function fetchLectures(req, res) {
+    const { course_id, subject_id, topic_id } = req.body;
+    try {
+        const url = `https://${API_BASE}/get/livecourseclassbycoursesubtopconceptapiv3?courseid=${course_id}&subjectid=${subject_id}&topicid=${topic_id}&conceptid=&start=-1`;
+        const response = await fetch(url, { headers: getHeaders() });
+        const data = await response.json();
+        
+        const rawVideos = data.data || [];
+        const formattedVideos = rawVideos.map(item => ({
+            id: item.id || item.video_id,
+            name: item.title || item.name || "Lecture",
+            video_id: item.id || item.video_id
+        }));
+
+        res.json(formattedVideos);
+    } catch (err) {
+        console.error("Lectures Fetch Error:", err.message);
+        res.json([]);
+    }
+}
+
+// 5. Decrypt Video Stream URL
 async function fetchVideoUrl(req, res) {
     const { course_id, video_id } = req.body;
     try {
@@ -130,11 +136,32 @@ async function fetchVideoUrl(req, res) {
             const data = resData.data;
             let finalStreamUrl = "";
 
-            if (data.download_link) {
+            // YT/Video ID
+            if (data.video_id) {
+                const decryptedVid = decryptAppx(data.video_id);
+                if (decryptedVid && !decryptedVid.includes("http")) {
+                    finalStreamUrl = `https://youtu.be/${decryptedVid}`;
+                }
+            }
+
+            // Direct Download Link
+            if (!finalStreamUrl && data.download_link) {
                 finalStreamUrl = decryptAppx(data.download_link);
-            } else if (data.encrypted_links && data.encrypted_links.length > 0) {
+            } 
+            
+            // Encrypted Links
+            if (!finalStreamUrl && data.encrypted_links && data.encrypted_links.length > 0) {
                 const path = data.encrypted_links[0].path;
-                if (path) finalStreamUrl = decryptAppx(path);
+                const key = data.encrypted_links[0].key;
+                if (path) {
+                    const da = decryptAppx(path);
+                    if (key) {
+                        const dk = Buffer.from(decryptAppx(key), "base64").toString("utf-8");
+                        finalStreamUrl = `${da}*${dk}`;
+                    } else {
+                        finalStreamUrl = da;
+                    }
+                }
             }
 
             let pdfUrl = data.pdf_link ? decryptAppx(data.pdf_link) : "";
@@ -157,5 +184,6 @@ module.exports = {
     fetchBatches,
     fetchSubjects,
     fetchTopics,
+    fetchLectures,
     fetchVideoUrl
 };
