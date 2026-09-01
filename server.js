@@ -3,7 +3,13 @@ const cors = require("cors");
 const path = require("path");
 require("dotenv").config();
 
-const { fetchBatches, fetchSubjects, fetchTopics, fetchVideoUrl } = require("./modules/api.js");
+const { 
+    fetchBatches, 
+    fetchSubjects, 
+    fetchTopics, 
+    fetchLectures, 
+    fetchVideoUrl 
+} = require("./modules/api.js");
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -21,6 +27,7 @@ app.get("/", (req, res) => {
 app.post("/api/batches", fetchBatches);
 app.post("/api/subjects", fetchSubjects);
 app.post("/api/topics", fetchTopics);
+app.post("/api/lectures", fetchLectures);
 app.post("/api/video", fetchVideoUrl);
 
 app.listen(PORT, "0.0.0.0", () => {
