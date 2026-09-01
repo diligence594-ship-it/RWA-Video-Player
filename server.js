@@ -1,39 +1,16 @@
 const express = require("express");
 const cors = require("cors");
-const path = require("path");
-require("dotenv").config();
-
-const { 
-    fetchBatches, 
-    fetchSubjects, 
-    fetchTopics, 
-    fetchLectures, 
-    fetchVideoUrl,
-    proxyStream 
-} = require("./modules/api.js");
+const { proxyStream } = require("./modules/api");
 
 const app = express();
-const PORT = process.env.PORT || 10000;
 
+// Enable CORS for all routes
 app.use(cors());
 app.use(express.json());
-app.use(express.static(__dirname));
 
-// Serve test.html on root
-app.get("/", (req, res) => {
-    res.sendFile(path.join(__dirname, "test.html"));
-});
-
-// API Endpoints
-app.post("/api/batches", fetchBatches);
-app.post("/api/subjects", fetchSubjects);
-app.post("/api/topics", fetchTopics);
-app.post("/api/lectures", fetchLectures);
-app.post("/api/video", fetchVideoUrl);
-
-// Proxy Endpoint for Authenticated HLS Streams
+// Proxy Endpoint Route Setup
+app.options("/api/proxy", cors());
 app.get("/api/proxy", proxyStream);
 
-app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server successfully started on port ${PORT}`);
-});
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
