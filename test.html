@@ -3,221 +3,80 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>『 𝐌𝐑𝐒𝐓𝐑𝐀𝐍𝐆𝐄𝐑™ 』 Batch Player</title>
+    <title>AppX Stream Player</title>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
     <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0d1117; color: #c9d1d9; display: flex; flex-direction: column; align-items: center; padding: 20px; }
-        h1 { margin-bottom: 20px; color: #58a6ff; font-size: 1.8rem; }
-        .controls { width: 100%; max-width: 700px; display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px; }
-        select { padding: 12px; background: #161b22; color: #f0f6fc; border: 1px solid #30363d; border-radius: 6px; font-size: 1rem; outline: none; }
-        select:focus { border-color: #58a6ff; }
-        video { width: 100%; max-width: 850px; background: #000; border-radius: 8px; border: 1px solid #30363d; aspect-ratio: 16/9; }
-        .pdf-btn { display: inline-block; padding: 10px 15px; background: #238636; color: #fff; text-decoration: none; border-radius: 6px; font-weight: bold; text-align: center; margin-top: 10px; }
+        body {
+            background-color: #121212;
+            color: #fff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            font-family: sans-serif;
+        }
+        video {
+            width: 90%;
+            max-width: 800px;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        }
     </style>
 </head>
 <body>
 
-    <h1>『 𝐌𝐑𝐒𝐓𝐑𝐀𝐍𝐆𝐄𝐑™ 』 Video Player</h1>
+    <h2>AppX Stream Player</h2>
+    <video id="videoPlayer" controls autoplay></video>
 
-    <div class="controls">
-        <select id="batchSelect" onchange="loadSubjects()">
-            <option value="">-- Select Batch --</option>
-        </select>
+    <script>
+        const video = document.getElementById("videoPlayer");
 
-        <select id="subjectSelect" onchange="loadTopics()">
-            <option value="">-- Select Subject --</option>
-        </select>
+        // Yahan AppX se mili Signed `.m3u8` master URL dalein
+        const signedAppxUrl = "YOUR_APPX_SIGNED_M3U8_URL_HERE";
 
-        <select id="topicSelect" onchange="loadLectures()">
-            <option value="">-- Select Topic --</option>
-        </select>
+        // Vercel / Render Backend Proxy Link
+        const proxiedStreamUrl = `/api/proxy?url=${encodeURIComponent(signedAppxUrl)}`;
 
-        <select id="lectureSelect" onchange="playSelectedVideo()">
-            <option value="">-- Select Lecture --</option>
-        </select>
-
-        <a id="pdfLink" class="pdf-btn" style="display: none;" target="_blank">Download PDF Notes</a>
-    </div>
-
-    <video id="videoPlayer" controls></video>
-
-<script>
-    let hlsInstance = null;
-
-    window.onload = async () => {
-        try {
-            const res = await fetch('/api/batches', { method: 'POST', headers: {'Content-Type': 'application/json'} });
-            const data = await res.json();
-            const batchSelect = document.getElementById('batchSelect');
-            
-            if (Array.isArray(data)) {
-                data.forEach(batch => {
-                    let opt = document.createElement('option');
-                    opt.value = batch.id;
-                    opt.textContent = batch.name;
-                    batchSelect.appendChild(opt);
-                });
-            }
-        } catch (err) {
-            console.error("Batches fetch error:", err);
-        }
-    };
-
-    async function loadSubjects() {
-        const batchId = document.getElementById('batchSelect').value;
-        const subjectSelect = document.getElementById('subjectSelect');
-        document.getElementById('topicSelect').innerHTML = '<option value="">-- Select Topic --</option>';
-        document.getElementById('lectureSelect').innerHTML = '<option value="">-- Select Lecture --</option>';
-        subjectSelect.innerHTML = '<option value="">-- Select Subject --</option>';
-
-        if (!batchId) return;
-
-        try {
-            const res = await fetch('/api/subjects', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ batch_id: batchId })
+        if (Hls.isSupported()) {
+            const hls = new Hls({
+                enableWorker: true,
+                lowLatencyMode: true
             });
-            const data = await res.json();
 
-            if (Array.isArray(data)) {
-                data.forEach(sub => {
-                    let opt = document.createElement('option');
-                    opt.value = sub.id;
-                    opt.textContent = sub.name;
-                    subjectSelect.appendChild(opt);
-                });
-            }
-        } catch (err) {
-            console.error("Subjects fetch error:", err);
-        }
-    }
+            hls.loadSource(proxiedStreamUrl);
+            hls.attachMedia(video);
 
-    async function loadTopics() {
-        const batchId = document.getElementById('batchSelect').value;
-        const subjectId = document.getElementById('subjectSelect').value;
-        const topicSelect = document.getElementById('topicSelect');
-        document.getElementById('lectureSelect').innerHTML = '<option value="">-- Select Lecture --</option>';
-        topicSelect.innerHTML = '<option value="">-- Select Topic --</option>';
-
-        if (!subjectId) return;
-
-        try {
-            const res = await fetch('/api/topics', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ course_id: batchId, subject_id: subjectId })
+            hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                video.play().catch(e => console.log("Autoplay blocked:", e));
             });
-            const data = await res.json();
 
-            if (Array.isArray(data)) {
-                data.forEach(topic => {
-                    let opt = document.createElement('option');
-                    opt.value = topic.id;
-                    opt.textContent = topic.name;
-                    topicSelect.appendChild(opt);
-                });
-            }
-        } catch (err) {
-            console.error("Topics fetch error:", err);
-        }
-    }
-
-    async function loadLectures() {
-        const batchId = document.getElementById('batchSelect').value;
-        const subjectId = document.getElementById('subjectSelect').value;
-        const topicId = document.getElementById('topicSelect').value;
-        const lectureSelect = document.getElementById('lectureSelect');
-        
-        lectureSelect.innerHTML = '<option value="">⏳ Fetching Lectures...</option>';
-
-        if (!topicId) return;
-
-        try {
-            const res = await fetch('/api/lectures', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ course_id: batchId, subject_id: subjectId, topic_id: topicId })
-            });
-            const data = await res.json();
-
-            lectureSelect.innerHTML = '<option value="">-- Select Lecture --</option>';
-
-            if (Array.isArray(data) && data.length > 0) {
-                data.forEach(lec => {
-                    let opt = document.createElement('option');
-                    opt.value = lec.id;
-                    opt.textContent = lec.name;
-                    lectureSelect.appendChild(opt);
-                });
-            } else {
-                lectureSelect.innerHTML = '<option value="">-- No Lectures Found --</option>';
-            }
-        } catch (err) {
-            console.error("Lectures fetch error:", err);
-            lectureSelect.innerHTML = '<option value="">-- Error Loading Lectures --</option>';
-        }
-    }
-
-    async function playSelectedVideo() {
-        const batchId = document.getElementById('batchSelect').value;
-        const videoId = document.getElementById('lectureSelect').value;
-        const video = document.getElementById('videoPlayer');
-        const pdfBtn = document.getElementById('pdfLink');
-
-        if (!videoId) return;
-
-        try {
-            const res = await fetch('/api/video', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ course_id: batchId, video_id: videoId })
-            });
-            const data = await res.json();
-
-            if (data.success && data.video_url) {
-                let rawUrl = data.video_url;
-
-                if (rawUrl.includes('*')) {
-                    rawUrl = rawUrl.split('*')[0];
-                }
-
-                if (data.pdf_url) {
-                    pdfBtn.href = data.pdf_url;
-                    pdfBtn.style.display = 'inline-block';
-                } else {
-                    pdfBtn.style.display = 'none';
-                }
-
-                if (hlsInstance) {
-                    hlsInstance.destroy();
-                }
-
-                // Route through Express Proxy for Token Authorization
-                const proxiedUrl = `/api/proxy?url=${encodeURIComponent(rawUrl)}`;
-
-                if (rawUrl.includes('.m3u8')) {
-                    if (Hls.isSupported()) {
-                        hlsInstance = new Hls();
-                        hlsInstance.loadSource(proxiedUrl);
-                        hlsInstance.attachMedia(video);
-                        hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => video.play());
-                    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                        video.src = proxiedUrl;
-                        video.play();
+            // Auto-recovery handling on media or network error
+            hls.on(Hls.Events.ERROR, function (event, data) {
+                if (data.fatal) {
+                    switch (data.type) {
+                        case Hls.ErrorTypes.NETWORK_ERROR:
+                            console.log("Network error encountered, trying to recover...");
+                            hls.startLoad();
+                            break;
+                        case Hls.ErrorTypes.MEDIA_ERROR:
+                            console.log("Media error encountered, trying to recover...");
+                            hls.recoverMediaError();
+                            break;
+                        default:
+                            hls.destroy();
+                            break;
                     }
-                } else {
-                    video.src = rawUrl;
-                    video.play();
                 }
-            } else {
-                alert("Stream URL fetch nahi ho saki.");
-            }
-        } catch (err) {
-            console.error("Play Video Error:", err);
+            });
+        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+            // Native HLS support for Safari / iOS
+            video.src = proxiedStreamUrl;
+            video.addEventListener('loadedmetadata', () => {
+                video.play();
+            });
         }
-    }
-</script>
+    </script>
 </body>
 </html>
