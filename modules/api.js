@@ -102,15 +102,24 @@ async function fetchTopics(req, res) {
     }
 }
 
-// 4. Actual Lectures/Videos Fetching (Python script concept applied)
+// 4. Lectures / Videos Fetching (Topic ID & Concept ID Fallback)
 async function fetchLectures(req, res) {
     const { course_id, subject_id, topic_id } = req.body;
     try {
-        const url = `https://${API_BASE}/get/livecourseclassbycoursesubtopconceptapiv3?courseid=${course_id}&subjectid=${subject_id}&topicid=${topic_id}&conceptid=&start=-1`;
-        const response = await fetch(url, { headers: getHeaders() });
-        const data = await response.json();
-        
-        const rawVideos = data.data || [];
+        // Primary Endpoint
+        let url = `https://${API_BASE}/get/livecourseclassbycoursesubtopconceptapiv3?courseid=${course_id}&subjectid=${subject_id}&topicid=${topic_id}&conceptid=&start=-1`;
+        let response = await fetch(url, { headers: getHeaders() });
+        let data = await response.json();
+        let rawVideos = data.data || [];
+
+        // Secondary Endpoint (If topic_id acts as concept_id)
+        if (!rawVideos || rawVideos.length === 0) {
+            url = `https://${API_BASE}/get/livecourseclassbycoursesubtopconceptapiv3?courseid=${course_id}&subjectid=${subject_id}&topicid=&conceptid=${topic_id}&start=-1`;
+            response = await fetch(url, { headers: getHeaders() });
+            data = await response.json();
+            rawVideos = data.data || [];
+        }
+
         const formattedVideos = rawVideos.map(item => ({
             id: item.id || item.video_id,
             name: item.title || item.name || "Lecture",
@@ -124,7 +133,7 @@ async function fetchLectures(req, res) {
     }
 }
 
-// 5. Decrypt Video Stream URL
+// 5. Video Stream & Decryption Engine
 async function fetchVideoUrl(req, res) {
     const { course_id, video_id } = req.body;
     try {
@@ -136,7 +145,7 @@ async function fetchVideoUrl(req, res) {
             const data = resData.data;
             let finalStreamUrl = "";
 
-            // YT/Video ID
+            // YouTube Video ID Check
             if (data.video_id) {
                 const decryptedVid = decryptAppx(data.video_id);
                 if (decryptedVid && !decryptedVid.includes("http")) {
@@ -149,7 +158,7 @@ async function fetchVideoUrl(req, res) {
                 finalStreamUrl = decryptAppx(data.download_link);
             } 
             
-            // Encrypted Links
+            // Encrypted Stream Links (m3u8 / MPD)
             if (!finalStreamUrl && data.encrypted_links && data.encrypted_links.length > 0) {
                 const path = data.encrypted_links[0].path;
                 const key = data.encrypted_links[0].key;
