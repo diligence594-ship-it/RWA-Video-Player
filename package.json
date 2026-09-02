@@ -4,16 +4,13 @@
   "description": "HLS proxy server with XOR-28 decryption and referer header spoofing for AppX streaming",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "nodemon server.js"
+    "start": "node server.js"
   },
   "dependencies": {
     "axios": "^1.6.8",
+    "cors": "^2.8.5",
     "express": "^4.19.2",
     "node-fetch": "^2.7.0"
-  },
-  "devDependencies": {
-    "nodemon": "^3.1.0"
   },
   "engines": {
     "node": ">=18.0.0"
