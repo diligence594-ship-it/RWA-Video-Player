@@ -1,4 +1,5 @@
 const fetch = require("node-fetch");
+const axios = require("axios");
 const crypto = require("crypto");
 
 const API_BASE = process.env.API_BASE || "rozgarapinew.teachx.in";
@@ -7,6 +8,11 @@ const DEFAULT_USER_ID = process.env.APPX_USERID || "4300255";
 
 const AES_KEY = Buffer.from("638udh3829162018", "utf-8");
 const AES_IV = Buffer.from("fedcba9876543210", "utf-8");
+
+// AppX Custom Headers for CDN & API
+const REFERER = "https://appx-play.akamai.net.in/";
+const ORIGIN  = "https://appx-play.akamai.net.in";
+const HOST    = "static-trans-v1.appx.co.in";
 
 function decryptAppx(encryptedText) {
     if (!encryptedText) return "";
@@ -22,6 +28,14 @@ function decryptAppx(encryptedText) {
         return decrypted.trim();
     } catch (err) {
         return encryptedText;
+    }
+}
+
+// First 28-byte XOR Decryption function for AppX Encrypted Streams
+function decrypt28(buf, key) {
+    if (!key || buf.length < 28) return;
+    for (let i = 0; i < 28; i++) {
+        buf[i] ^= (i < key.length ? key.charCodeAt(i) : i);
     }
 }
 
@@ -109,23 +123,6 @@ async function fetchLectures(req, res) {
             if (data2.data && data2.data.length > 0) rawVideos = data2.data;
         }
 
-        if (rawVideos.length === 0) {
-            let conceptUrl = `https://${API_BASE}/get/allconceptfrmlivecourseclass?courseid=${course_id}&subjectid=${subject_id}&topicid=${topic_id}&start=-1`;
-            let resConcept = await fetch(conceptUrl, { headers });
-            let dataConcept = await resConcept.json();
-            let concepts = dataConcept.data || [];
-
-            for (let concept of concepts) {
-                let cid = concept.conceptid || concept.id;
-                let url3 = `https://${API_BASE}/get/livecourseclassbycoursesubtopconceptapiv3?courseid=${course_id}&subjectid=${subject_id}&topicid=${topic_id}&conceptid=${cid}&start=-1`;
-                let res3 = await fetch(url3, { headers });
-                let data3 = await res3.json();
-                if (data3.data && data3.data.length > 0) {
-                    rawVideos = rawVideos.concat(data3.data);
-                }
-            }
-        }
-
         const formattedVideos = rawVideos.map((item, idx) => ({
             id: String(item.id || item.video_id || item.v_id || idx),
             name: item.title || item.name || item.video_title || `Lecture ${idx + 1}`
@@ -151,6 +148,7 @@ async function fetchVideoUrl(req, res) {
         if (resData && resData.data) {
             const data = resData.data;
             let rawStreamUrl = "";
+            let streamKey = "";
 
             if (data.video_id) {
                 const decryptedVid = decryptAppx(data.video_id);
@@ -163,21 +161,21 @@ async function fetchVideoUrl(req, res) {
                 }
             }
 
-            if (!rawStreamUrl && data.download_link) {
+            if (data.download_link) {
                 rawStreamUrl = decryptAppx(data.download_link);
             } 
             
             if (!rawStreamUrl && data.encrypted_links && data.encrypted_links.length > 0) {
                 const path = data.encrypted_links[0].path;
-                if (path) {
-                    rawStreamUrl = decryptAppx(path);
-                }
+                const keyEnc = data.encrypted_links[0].key;
+                if (path) rawStreamUrl = decryptAppx(path);
+                if (keyEnc) streamKey = Buffer.from(decryptAppx(keyEnc), "base64").toString("utf-8");
             }
 
             let pdfUrl = data.pdf_link ? decryptAppx(data.pdf_link) : "";
 
             if (rawStreamUrl) {
-                const queryAuth = `&token=${encodeURIComponent(reqToken)}&userid=${encodeURIComponent(reqUserId)}`;
+                const queryAuth = `&token=${encodeURIComponent(reqToken)}&userid=${encodeURIComponent(reqUserId)}&key=${encodeURIComponent(streamKey)}`;
                 const finalProxyUrl = `/api/proxy?url=${encodeURIComponent(rawStreamUrl)}${queryAuth}`;
                 
                 return res.json({
@@ -196,15 +194,39 @@ async function fetchVideoUrl(req, res) {
     }
 }
 
+// PROXY WITH XOR-28 DECRYPTION AND AKAMAI ORIGIN HEADERS
 async function proxyStream(req, res) {
     const videoUrl = req.query.url;
+    const key = req.query.key || "";
     const reqToken = req.query.token || DEFAULT_USER_TOKEN;
     const reqUserId = req.query.userid || DEFAULT_USER_ID;
 
     if (!videoUrl) return res.status(400).send("No stream URL provided");
 
+    const clientRange = req.headers.range || "bytes=0-";
+
     try {
-        const response = await fetch(videoUrl, { headers: getHeaders(reqToken, reqUserId) });
+        const upstream = await axios({
+            method: "GET",
+            url: videoUrl,
+            responseType: "stream",
+            headers: {
+                "Referer": REFERER,
+                "Origin": ORIGIN,
+                "Host": HOST,
+                "Range": clientRange,
+                "User-Agent": "Mozilla/5.0 (Android)",
+                "Client-Service": "Appx",
+                "Auth-Key": "appxapi",
+                "Authorization": reqToken,
+                "User-ID": reqUserId
+            },
+            validateStatus: () => true
+        });
+
+        if (upstream.status === 403) {
+            return res.status(403).send("Origin blocked by AppX CDN");
+        }
 
         res.setHeader("Access-Control-Allow-Origin", "*");
         res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
@@ -212,41 +234,76 @@ async function proxyStream(req, res) {
 
         if (req.method === "OPTIONS") return res.sendStatus(200);
 
-        const contentType = response.headers.get("content-type") || "";
+        const contentType = upstream.headers["content-type"] || "";
 
-        if (videoUrl.includes(".m3u8") || contentType.includes("mpegurl") || contentType.includes("x-mpegurl")) {
+        // If PlayList (.m3u8), rewrite segments with proxy URL
+        if (videoUrl.includes(".m3u8") || contentType.includes("mpegurl")) {
             res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
-            let m3u8Text = await response.text();
 
-            const baseUrl = videoUrl.substring(0, videoUrl.lastIndexOf("/") + 1);
-            const authParams = `&token=${encodeURIComponent(reqToken)}&userid=${encodeURIComponent(reqUserId)}`;
+            let chunks = [];
+            upstream.data.on("data", chunk => chunks.push(chunk));
+            upstream.data.on("end", () => {
+                let m3u8Text = Buffer.concat(chunks).toString("utf-8");
+                const baseUrl = videoUrl.substring(0, videoUrl.lastIndexOf("/") + 1);
+                const authParams = `&token=${encodeURIComponent(reqToken)}&userid=${encodeURIComponent(reqUserId)}&key=${encodeURIComponent(key)}`;
 
-            const lines = m3u8Text.split(/\r?\n/);
-            const rewrittenLines = lines.map(line => {
-                let trimmed = line.trim();
-                if (!trimmed) return line;
+                const lines = m3u8Text.split(/\r?\n/);
+                const rewrittenLines = lines.map(line => {
+                    let trimmed = line.trim();
+                    if (!trimmed) return line;
 
-                if (trimmed.startsWith("#EXT-X-KEY:")) {
-                    return trimmed.replace(/URI="([^"]+)"/, (match, uri) => {
-                        let absoluteUri = uri.startsWith("http") ? uri : new URL(uri, baseUrl).href;
-                        return `URI="/api/proxy?url=${encodeURIComponent(absoluteUri)}${authParams}"`;
-                    });
-                }
+                    if (trimmed.startsWith("#EXT-X-KEY:")) {
+                        return trimmed.replace(/URI="([^"]+)"/, (match, uri) => {
+                            let absoluteUri = uri.startsWith("http") ? uri : new URL(uri, baseUrl).href;
+                            return `URI="/api/proxy?url=${encodeURIComponent(absoluteUri)}${authParams}"`;
+                        });
+                    }
 
-                if (!trimmed.startsWith("#")) {
-                    let absoluteSegmentUrl = trimmed.startsWith("http") ? trimmed : new URL(trimmed, baseUrl).href;
-                    return `/api/proxy?url=${encodeURIComponent(absoluteSegmentUrl)}${authParams}`;
-                }
+                    if (!trimmed.startsWith("#")) {
+                        let absoluteSegmentUrl = trimmed.startsWith("http") ? trimmed : new URL(trimmed, baseUrl).href;
+                        return `/api/proxy?url=${encodeURIComponent(absoluteSegmentUrl)}${authParams}`;
+                    }
 
-                return line;
+                    return line;
+                });
+
+                res.send(rewrittenLines.join("\n"));
             });
-
-            return res.send(rewrittenLines.join("\n"));
-        } else {
-            if (contentType) res.setHeader("Content-Type", contentType);
-            const buffer = await response.buffer();
-            return res.send(buffer);
+            return;
         }
+
+        // For TS Video Chunks & MP4 (Decrypt first 28 bytes if key exists)
+        res.status(upstream.status);
+        res.setHeader("Content-Type", contentType || "video/mp4");
+        res.setHeader("Accept-Ranges", "bytes");
+
+        if (upstream.headers["content-range"]) res.setHeader("Content-Range", upstream.headers["content-range"]);
+        if (upstream.headers["content-length"]) res.setHeader("Content-Length", upstream.headers["content-length"]);
+
+        // If Range request isn't start, stream directly
+        if (!clientRange.startsWith("bytes=0") || !key) {
+            return upstream.data.pipe(res);
+        }
+
+        let buffer = Buffer.alloc(0);
+        let done = false;
+
+        upstream.data.on("data", chunk => {
+            if (!done) {
+                buffer = Buffer.concat([buffer, chunk]);
+                if (buffer.length >= 28) {
+                    decrypt28(buffer, key);
+                    res.write(buffer);
+                    done = true;
+                }
+            } else {
+                res.write(chunk);
+            }
+        });
+
+        upstream.data.on("end", () => res.end());
+        upstream.data.on("error", () => res.end());
+
     } catch (err) {
         console.error("Stream Proxy Error:", err.message);
         res.status(500).send("Proxy Error: " + err.message);
